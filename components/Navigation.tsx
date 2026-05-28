@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, BarChart2, Calendar, MessageCircle, Library } from "lucide-react";
+import { BookOpen, BarChart2, Calendar, MessageCircle, Library, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "ダッシュボード", icon: BarChart2 },
+  { href: "/drill", label: "ドリル", icon: Zap },
   { href: "/schedule", label: "学習計画", icon: Calendar },
   { href: "/progress", label: "進捗管理", icon: BookOpen },
   { href: "/resources", label: "参考書", icon: Library },
@@ -24,22 +25,25 @@ export function Navigation() {
             <div className="w-7 h-7 bg-blue-600 rounded flex items-center justify-center">
               <BookOpen className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-gray-900">宅建スタディ</span>
+            <span className="font-bold text-gray-900 hidden sm:inline">宅建スタディ</span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             {navItems.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  "flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors",
                   pathname === href
                     ? "bg-blue-50 text-blue-700"
-                    : "text-gray-600 hover:bg-gray-100"
+                    : "text-gray-600 hover:bg-gray-100",
+                  href === "/drill" && pathname !== "/drill"
+                    ? "text-purple-600 hover:bg-purple-50"
+                    : ""
                 )}
               >
-                <Icon className="w-4 h-4" />
-                <span className="hidden sm:inline">{label}</span>
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden md:inline">{label}</span>
               </Link>
             ))}
           </div>
