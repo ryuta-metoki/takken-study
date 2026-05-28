@@ -1,9 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { SUBJECTS } from "@/lib/takken-curriculum";
 import type { SubjectKey, QuizQuestion } from "@/types";
-
-const client = new Anthropic();
 
 function buildPrompt(subject: SubjectKey, topic: string, difficulty: string, count: number): string {
   const subjectName = SUBJECTS[subject].name;
@@ -20,7 +17,7 @@ function buildPrompt(subject: SubjectKey, topic: string, difficulty: string, cou
 \`\`\`json
 [
   {
-    "id": "q_{{uuid4}}",
+    "id": "q_placeholder",
     "subject": "${subject}",
     "topic": "${topic}",
     "question": "問題文（100字前後）",
@@ -33,10 +30,79 @@ function buildPrompt(subject: SubjectKey, topic: string, difficulty: string, cou
 \`\`\`
 
 # 注意事項
-- 本試験の出題形式に準拠すること（「正しいものはどれか」「誤っているものはどれか」形式）
+- 本試験の出題形式に準拠すること
 - 選択肢は「ア〜エ」の記号付きで
-- 必ず実際の宅建試験で出題されうる内容にすること
 - JSONのみ出力すること（前後に説明文を付けない）`;
+}
+
+async function generateWithAI(
+  subject: SubjectKey,
+  topic: string,
+  difficulty: string,
+  count: number
+): Promise<QuizQuestion[]> {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic();
+
+  const message = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: buildPrompt(subject, topic, difficulty, count) }],
+  });
+
+  const raw = message.content[0].type === "text" ? message.content[0].text : "";
+  const jsonMatch = raw.match(/```json\n?([\s\S]*?)```/) ?? raw.match(/(\[[\s\S]*\])/);
+  if (!jsonMatch) throw new Error("JSON parse failed");
+
+  const questions = JSON.parse(jsonMatch[1]) as QuizQuestion[];
+  return questions.map((q, i) => ({
+    ...q,
+    id: `ai_${subject}_${Date.now()}_${i}`,
+  }));
+}
+
+function getFallbackQuestions(
+  subject: SubjectKey,
+  topic: string,
+  difficulty: string,
+  count: number
+): QuizQuestion[] {
+  // 動的importでバンクを取得（question-bankが存在しない場合も安全）
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getRandomQuestions } = require("@/lib/question-bank");
+    const questions = getRandomQuestions(subject, topic, count, difficulty || undefined) as QuizQuestion[];
+    if (questions.length > 0) return questions;
+  } catch {
+    // バンクが存在しない場合は下のデフォルトへ
+  }
+
+  // バンクもなければ最小フォールバック
+  return generateMinimalFallback(subject, topic, count);
+}
+
+function generateMinimalFallback(subject: SubjectKey, topic: string, count: number): QuizQuestion[] {
+  const base: QuizQuestion = {
+    id: `fallback_${subject}_0`,
+    subject,
+    topic,
+    question: `【${SUBJECTS[subject].name}】${topic}に関して、次のうち正しいものはどれか。`,
+    options: [
+      "ア この設問はAPIキーを設定すると、AIが自動生成した本格問題で練習できます",
+      "イ APIキーは .env.local に ANTHROPIC_API_KEY=sk-ant-xxx の形式で設定します",
+      "ウ Vercelにデプロイした場合はダッシュボードの環境変数に設定してください",
+      "エ 設定後はVercelの再デプロイが必要です（自動でトリガーされます）",
+    ],
+    correctIndex: 0,
+    explanation: `APIキーを設定するとこのトピック（${topic}）の本格的な宅建問題をAIが自動生成します。現在はAPIキー未設定のため、このデモ問題が表示されています。`,
+    difficulty: "easy",
+  };
+
+  return Array.from({ length: Math.min(count, 3) }, (_, i) => ({
+    ...base,
+    id: `fallback_${subject}_${i}`,
+    options: base.options,
+  }));
 }
 
 export async function POST(req: NextRequest) {
@@ -44,7 +110,7 @@ export async function POST(req: NextRequest) {
     subject,
     topic,
     difficulty = "medium",
-    count = 3,
+    count = 5,
   } = await req.json() as {
     subject: SubjectKey;
     topic: string;
@@ -52,34 +118,20 @@ export async function POST(req: NextRequest) {
     count?: number;
   };
 
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "user",
-        content: buildPrompt(subject, topic, difficulty, Math.min(count, 5)),
-      },
-    ],
-  });
+  const apiKey = process.env.ANTHROPIC_API_KEY;
 
-  const raw = message.content[0].type === "text" ? message.content[0].text : "";
-
-  // JSONブロックを抽出
-  const jsonMatch = raw.match(/```json\n?([\s\S]*?)```/) ?? raw.match(/(\[[\s\S]*\])/);
-  if (!jsonMatch) {
-    return NextResponse.json({ error: "Failed to parse questions", raw }, { status: 500 });
+  // APIキーがある場合はAI生成を試みる
+  if (apiKey && apiKey !== "your_api_key_here") {
+    try {
+      const questions = await generateWithAI(subject, topic, difficulty, Math.min(count, 5));
+      return NextResponse.json(questions);
+    } catch (err) {
+      console.error("AI generation failed, falling back to bank:", err);
+      // AI失敗時はフォールバック
+    }
   }
 
-  try {
-    const questions = JSON.parse(jsonMatch[1]) as QuizQuestion[];
-    // IDが重複しないように一意化
-    const timestamped = questions.map((q, i) => ({
-      ...q,
-      id: `${subject}_${Date.now()}_${i}`,
-    }));
-    return NextResponse.json(timestamped);
-  } catch {
-    return NextResponse.json({ error: "JSON parse failed", raw }, { status: 500 });
-  }
+  // APIキーなし or AI失敗 → 静的問題バンクから出題
+  const questions = getFallbackQuestions(subject, topic, difficulty, Math.min(count, 5));
+  return NextResponse.json(questions);
 }

@@ -121,3 +121,27 @@ export interface SubjectAccuracy {
   accuracy: number;       // 0-100
   trend: "up" | "down" | "stable";
 }
+
+// ─── 参考書選択・タスク管理 ──────────────────────────────────────
+
+export interface SelectedBook {
+  bookId: string;
+  selectedAt: string;
+}
+
+export type TaskPhase = 1 | 2 | 3;
+
+export interface BookTask {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  bookCategory: "textbook" | "workbook" | "mock";
+  phase: TaskPhase;
+  title: string;
+  description: string;
+  subject: SubjectKey;
+  estimatedMinutes: number;
+  completed: boolean;
+  completedAt?: string;
+  order: number;
+}

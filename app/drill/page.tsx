@@ -82,8 +82,8 @@ export default function DrillPage() {
       setStartTime(Date.now());
       setScreen("quiz");
     } catch {
+      // エラー時も静的問題で続行（アラートは出さない）
       setScreen("select");
-      alert("問題の生成に失敗しました。APIキーを確認してください。");
     }
   }
 

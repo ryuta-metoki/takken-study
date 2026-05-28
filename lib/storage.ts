@@ -1,7 +1,9 @@
 import type {
+  BookTask,
   DrillRecord,
   DrillSession,
   GeneratedSchedule,
+  SelectedBook,
   StreakData,
   StudyLog,
   SubjectAccuracy,
@@ -17,6 +19,8 @@ const KEYS = {
   DRILL_RECORDS: "takken_drill_records",
   DRILL_SESSIONS: "takken_drill_sessions",
   STREAK: "takken_streak",
+  SELECTED_BOOKS: "takken_selected_books",
+  BOOK_TASKS: "takken_book_tasks",
 } as const;
 
 function safeGet<T>(key: string): T | null {
@@ -197,4 +201,83 @@ export function getTotalDrillStats(): { total: number; correct: number; accuracy
   const total = records.length;
   const correct = records.filter((r) => r.correct).length;
   return { total, correct, accuracy: total === 0 ? 0 : Math.round((correct / total) * 100) };
+}
+
+// ─── 参考書選択 ──────────────────────────────────────────────────
+
+export function getSelectedBooks(): SelectedBook[] {
+  return safeGet<SelectedBook[]>(KEYS.SELECTED_BOOKS) ?? [];
+}
+
+export function isBookSelected(bookId: string): boolean {
+  return getSelectedBooks().some((b) => b.bookId === bookId);
+}
+
+export function toggleBookSelection(bookId: string): boolean {
+  const selected = getSelectedBooks();
+  const exists = selected.findIndex((b) => b.bookId === bookId);
+  if (exists >= 0) {
+    selected.splice(exists, 1);
+    safeSet(KEYS.SELECTED_BOOKS, selected);
+    return false;
+  } else {
+    selected.push({ bookId, selectedAt: new Date().toISOString() });
+    safeSet(KEYS.SELECTED_BOOKS, selected);
+    return true;
+  }
+}
+
+// ─── タスク管理 ──────────────────────────────────────────────────
+
+export function getBookTasks(): BookTask[] {
+  return safeGet<BookTask[]>(KEYS.BOOK_TASKS) ?? [];
+}
+
+export function saveBookTasks(tasks: BookTask[]): void {
+  safeSet(KEYS.BOOK_TASKS, tasks);
+}
+
+export function addBookTasks(newTasks: BookTask[]): void {
+  const existing = getBookTasks();
+  // 同じbookIdのタスクは上書き
+  const filtered = existing.filter((t) => !newTasks.some((n) => n.bookId === t.bookId));
+  safeSet(KEYS.BOOK_TASKS, [...filtered, ...newTasks]);
+}
+
+export function removeBookTasks(bookId: string): void {
+  const tasks = getBookTasks().filter((t) => t.bookId !== bookId);
+  safeSet(KEYS.BOOK_TASKS, tasks);
+}
+
+export function toggleTaskCompletion(taskId: string): BookTask[] {
+  const tasks = getBookTasks();
+  const idx = tasks.findIndex((t) => t.id === taskId);
+  if (idx >= 0) {
+    tasks[idx] = {
+      ...tasks[idx],
+      completed: !tasks[idx].completed,
+      completedAt: !tasks[idx].completed ? new Date().toISOString() : undefined,
+    };
+  }
+  safeSet(KEYS.BOOK_TASKS, tasks);
+  return tasks;
+}
+
+export function getTaskStats(): { total: number; completed: number; byPhase: Record<number, { total: number; completed: number }> } {
+  const tasks = getBookTasks();
+  const total = tasks.length;
+  const completed = tasks.filter((t) => t.completed).length;
+  const byPhase: Record<number, { total: number; completed: number }> = { 1: { total: 0, completed: 0 }, 2: { total: 0, completed: 0 }, 3: { total: 0, completed: 0 } };
+  for (const t of tasks) {
+    byPhase[t.phase].total++;
+    if (t.completed) byPhase[t.phase].completed++;
+  }
+  return { total, completed, byPhase };
+}
+
+export function getTodayTasks(limit = 5): BookTask[] {
+  return getBookTasks()
+    .filter((t) => !t.completed)
+    .sort((a, b) => a.phase - b.phase || a.order - b.order)
+    .slice(0, limit);
 }
