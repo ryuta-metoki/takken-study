@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, BarChart2, Calendar, MessageCircle } from "lucide-react";
+import { BookOpen, BarChart2, Calendar, MessageCircle, Library } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "ダッシュボード", icon: BarChart2 },
   { href: "/schedule", label: "学習計画", icon: Calendar },
   { href: "/progress", label: "進捗管理", icon: BookOpen },
+  { href: "/resources", label: "参考書", icon: Library },
   { href: "/chat", label: "AI質問", icon: MessageCircle },
 ];
 
